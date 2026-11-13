@@ -60,13 +60,24 @@ jobs:
           KC="$RUNNER_TEMP/sign.keychain-db"
           KC_PASS="$(uuidgen)"
           echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          # .p12 из OpenSSL 3 зашифрован современно (AES, SHA-256), а связка ключей macOS понимает
+          # только старый формат (3DES, SHA-1) — пересохраняем через OpenSSL 3 из Homebrew с -legacy.
+          OSSL="$(brew --prefix openssl@3)/bin/openssl"
+          TMP_PASS="$(uuidgen)"
+          export P12_PASSWORD TMP_PASS
+          "$OSSL" pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin env:P12_PASSWORD -nodes -out "$RUNNER_TEMP/cert.pem"
+          "$OSSL" pkcs12 -export -legacy -in "$RUNNER_TEMP/cert.pem" -passout env:TMP_PASS -out "$RUNNER_TEMP/cert_legacy.p12"
+          rm -f "$RUNNER_TEMP/cert.pem" "$RUNNER_TEMP/cert.p12"
           security create-keychain -p "$KC_PASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PASS" "$KC"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/cert_legacy.p12" -k "$KC" -P "$TMP_PASS" -T /usr/bin/codesign
+          # промежуточный сертификат Apple — без него цепочка Developer ID может не сложиться
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KC" || true
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KC" > /dev/null
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          rm -f "$RUNNER_TEMP/cert.p12"
+          rm -f "$RUNNER_TEMP/cert_legacy.p12"
           ID="$(security find-identity -v -p codesigning "$KC" | grep 'Developer ID Application' | head -1 | awk '{print $2}')"
           test -n "$ID" || { echo "В .p12 нет сертификата Developer ID Application"; exit 1; }
           echo "IDENTITY=$ID" >> "$GITHUB_ENV"
