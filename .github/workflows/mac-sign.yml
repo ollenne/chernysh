@@ -1,0 +1,137 @@
+# Подпись и нотаризация Mac-версии «Хэллоуина Черныша» на машине с macOS.
+# Берёт неподписанную сборку Ren'Py из выпуска (zip), подписывает сертификатом Developer ID,
+# собирает .dmg, отправляет в Apple на нотаризацию, «прикрепляет» результат и кладёт .dmg в тот же выпуск.
+# Запуск: вкладка Actions → «Подпись Mac-версии» → Run workflow.
+#
+# Секреты (Settings → Secrets and variables → Actions):
+#   MACOS_CERT_P12       — сертификат Developer ID Application (.p12), закодированный в base64
+#   MACOS_CERT_PASSWORD  — пароль от .p12
+#   APPLE_API_KEY_P8     — ключ App Store Connect (содержимое AuthKey_XXXX.p8)
+#   APPLE_API_KEY_ID     — ID этого ключа
+#   APPLE_API_ISSUER_ID  — Issuer ID из App Store Connect
+
+name: Подпись Mac-версии
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Выпуск (тег)"
+        default: "v1.0"
+        required: true
+      unsigned:
+        description: "Неподписанный zip из выпуска"
+        default: "Chernysh-Mac-1.0.zip"
+        required: true
+      dmg:
+        description: "Как назвать готовый .dmg"
+        default: "Chernysh-Mac-1.0.dmg"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      UNSIGNED: ${{ inputs.unsigned }}
+      DMG: ${{ inputs.dmg }}
+      VOLNAME: "Хэллоуин Черныша"
+    steps:
+      - name: Скачать неподписанную сборку из выпуска
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$UNSIGNED" --dir in
+          mkdir -p work
+          ditto -x -k "in/$UNSIGNED" work
+          APP="$(find work -maxdepth 2 -name '*.app' -type d | head -1)"
+          test -n "$APP" || { echo "В архиве нет .app"; exit 1; }
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "Нашли: $APP"
+
+      - name: Установить сертификат во временную связку ключей
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          KC_PASS="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          ID="$(security find-identity -v -p codesigning "$KC" | grep 'Developer ID Application' | head -1 | awk '{print $2}')"
+          test -n "$ID" || { echo "В .p12 нет сертификата Developer ID Application"; exit 1; }
+          echo "IDENTITY=$ID" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$KC" | grep 'Developer ID Application' | sed 's/"\(.*\)"/\1/'
+
+      - name: Подписать игру
+        run: |
+          # права, как в Ren'Py (launcher/game/entitlements.plist): Python нужна исполняемая память
+          cat > "$RUNNER_TEMP/entitlements.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          SIGN=(codesign --force --timestamp --options runtime --entitlements "$RUNNER_TEMP/entitlements.plist" -s "$IDENTITY")
+          # сначала все исполняемые файлы и библиотеки внутри (изнутри наружу), потом приложение целиком
+          find "$APP" -type f | while read -r f; do
+            if file -b "$f" | grep -q 'Mach-O'; then "${SIGN[@]}" "$f"; fi
+          done
+          "${SIGN[@]}" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Собрать и подписать .dmg
+        run: |
+          mkdir -p dmgsrc
+          cp -R "$APP" dmgsrc/
+          ln -s /Applications dmgsrc/Applications
+          hdiutil create -volname "$VOLNAME" -srcfolder dmgsrc -format UDZO -ov "$DMG"
+          codesign --force --timestamp -s "$IDENTITY" "$DMG"
+
+      - name: Нотаризация в Apple
+        env:
+          P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          printf '%s' "$P8" > "$RUNNER_TEMP/AuthKey.p8"
+          set +e
+          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$KEY_ID" --issuer "$ISSUER" \
+            --wait --timeout 45m --output-format json > notary.json
+          STATUS=$?
+          set -e
+          cat notary.json
+          SUB_ID="$(python3 -c "import json;print(json.load(open('notary.json')).get('id',''))")"
+          RESULT="$(python3 -c "import json;print(json.load(open('notary.json')).get('status',''))")"
+          if [ "$RESULT" != "Accepted" ]; then
+            echo "Apple не приняла сборку ($RESULT). Подробности:"
+            [ -n "$SUB_ID" ] && xcrun notarytool log "$SUB_ID" --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$KEY_ID" --issuer "$ISSUER"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Прикрепить нотаризацию и проверить
+        run: |
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG"
+
+      - name: Положить .dmg в выпуск
+        run: gh release upload "$TAG" "$DMG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Убрать связку ключей
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/sign.keychain-db" || true
