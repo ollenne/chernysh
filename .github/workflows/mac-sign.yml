@@ -97,10 +97,15 @@ jobs:
           </plist>
           EOF
           SIGN=(codesign --force --timestamp --options runtime --entitlements "$RUNNER_TEMP/entitlements.plist" -s "$IDENTITY")
-          # сначала все исполняемые файлы и библиотеки внутри (изнутри наружу), потом приложение целиком
-          find "$APP" -type f | while read -r f; do
-            if file -b "$f" | grep -q 'Mach-O'; then "${SIGN[@]}" "$f"; fi
+          # сначала все исполняемые файлы и библиотеки внутри — от самых глубоких к верхним;
+          # главный исполняемый файл не трогаем: он подписывается вместе с приложением, последним
+          MAIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Contents/Info.plist")"
+          find "$APP" -type f -print0 | xargs -0 -n1 sh -c 'file -b "$0" | grep -q Mach-O && echo "$0"' > "$RUNNER_TEMP/macho.txt" || true
+          awk -F/ '{print NF "\t" $0}' "$RUNNER_TEMP/macho.txt" | sort -rn | cut -f2- | while IFS= read -r f; do
+            [ "$f" = "$MAIN" ] && continue
+            "${SIGN[@]}" "$f"
           done
+          echo "Подписано вложенных файлов: $(grep -vc "^$MAIN$" "$RUNNER_TEMP/macho.txt")"
           "${SIGN[@]}" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
