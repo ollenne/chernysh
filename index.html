@@ -72,12 +72,13 @@
   .text p + p { margin-top: 0; }
   .text .gap { margin-top: 1.33em; }
 
-  .downloads { margin-top: 2.4vh; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; }
+  .downloads { margin-top: 2.4vh; display: flex; flex-wrap: nowrap; gap: 16px; align-items: center; width: max-content; }
   .btn {
     display: inline-flex; align-items: center; gap: 12px;
-    padding: 14px 30px 15px;
+    padding: 14px 24px 15px;
     font-family: var(--serif);
-    font-size: clamp(18px, 1.15vw, 26px);
+    font-size: clamp(16px, 1.04vw, 24px);
+    white-space: nowrap;
     color: var(--night);
     background: var(--gold);
     border-radius: 6px;
@@ -142,7 +143,7 @@
       </a>
     </div>
 
-    <p class="note">Windows 10 и 11 или macOS, около 400 МБ. Если Windows покажет «Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае». На Mac при первом запуске: правый клик по игре → «Открыть».</p>
+    <p class="note">Windows 10 и 11 или macOS, около 400 МБ. Если Windows покажет «Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае». На Mac при первом запуске: правый клик по игре → «Открыть»; если не открывается — «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть».</p>
     <p class="mobile-banner"><b>Игра работает только на компьютерах и ноутбуках.</b> Откройте эту страницу на ПК, чтобы скачать её.</p>
   </div>
 </main>
