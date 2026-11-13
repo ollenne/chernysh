@@ -43,8 +43,13 @@
     z-index: 1;
     width: min(585px, 30.5vw + 60px);
     margin-left: 7.55vw;               /* 145 / 1920 */
-    padding-top: 18.7vh;               /* 202 / 1080 */
-    padding-bottom: 6vh;
+    padding-top: 13.5vh;               /* в макете 18.7vh (202 / 1080); подняли по просьбе Оли */
+    padding-bottom: 3vh;
+  }
+  /* компьютер: одна страница ровно в экран, без полосы прокрутки */
+  @media (min-width: 821px) and (hover: hover), (min-width: 821px) and (pointer: fine) {
+    html, body { height: 100%; overflow: hidden; }
+    .hero { height: 100vh; height: 100svh; min-height: 0; }
   }
   .kicker {
     font-size: clamp(40px, 4.17vw, 96px);    /* 80 / 1920 */
