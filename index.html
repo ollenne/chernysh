@@ -128,10 +128,31 @@
     .mobile-banner b { color: var(--gold); font-weight: 400; }
   }
 
+  /* ---------- кнопка музыки: левый верхний угол; жёлтая — играет, серая перечёркнутая — выключена ---------- */
+  .sound {
+    position: fixed; top: 20px; left: 20px; z-index: 5;
+    width: 48px; height: 48px; padding: 10px;
+    border: 0; border-radius: 50%; cursor: pointer;
+    background: rgba(20, 21, 43, .55);
+    color: #8a8a96;
+    transition: background .2s ease, box-shadow .2s ease;   /* цвет меняется сразу */
+  }
+  .sound svg { width: 100%; height: 100%; display: block; }
+  .sound .on-icon { display: none; }
+  .sound.on { color: var(--gold); }
+  .sound.on .on-icon { display: block; }
+  .sound.on .off-icon { display: none; }
+  .sound:hover, .sound:focus-visible { background: rgba(20, 21, 43, .8); box-shadow: 0 0 16px rgba(255, 195, 0, .35); outline: none; }
+
   @media (prefers-reduced-motion: reduce) { #sparks { display: none; } .btn { transition: none; } }
 </style>
 </head>
 <body>
+<button class="sound on" id="sound" type="button" aria-label="Выключить музыку" title="Музыка">
+  <svg class="on-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+  <svg class="off-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9l6 6M22 9l-6 6"/></svg>
+</button>
+<audio id="music" src="assets/music.mp3" loop preload="auto"></audio>
 <main class="hero">
   <canvas id="sparks" aria-hidden="true"></canvas>
   <div class="content">
@@ -210,6 +231,52 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+})();
+</script>
+<script>
+/* Музыка из главного меню игры: включена по умолчанию, громкость 50%, плавное появление.
+   Браузеры не дают сайту включить звук до первого действия человека — тогда музыка начнётся
+   с первого клика, касания или клавиши. Выбор «выключить» запоминается. */
+(function () {
+  var a = document.getElementById("music"), b = document.getElementById("sound");
+  if (!a || !b) return;
+  var VOL = 0.5, on = true;
+  try { on = localStorage.getItem("chernysh_music") !== "off"; } catch (e) {}
+  function show() {
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-label", on ? "Выключить музыку" : "Включить музыку");
+  }
+  function fadeIn() {
+    a.volume = 0;
+    var t0 = Date.now();
+    var id = setInterval(function () {
+      var k = Math.min(1, (Date.now() - t0) / 1500);
+      a.volume = VOL * k;
+      if (k >= 1 || a.paused) clearInterval(id);
+    }, 50);
+  }
+  function start() {
+    if (!on || !a.paused) return;
+    var p = a.play();
+    if (p && p.then) p.then(fadeIn, function () {});
+    else fadeIn();
+  }
+  function firstTouch() {
+    start();
+    ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { removeEventListener(ev, firstTouch, true); });
+  }
+  b.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (on && a.paused) { start(); return; }        /* браузер ещё не дал играть — этот клик и включает */
+    on = !on;
+    try { localStorage.setItem("chernysh_music", on ? "on" : "off"); } catch (e2) {}
+    show();
+    if (on) start(); else a.pause();
+  });
+  show();
+  a.volume = VOL;
+  start();
+  ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { addEventListener(ev, firstTouch, true); });
 })();
 </script>
 </body>
