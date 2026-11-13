@@ -261,13 +261,14 @@
     if (p && p.then) p.then(fadeIn, function () {});
     else fadeIn();
   }
-  function firstTouch() {
+  function firstTouch(e) {
+    if (e && e.target && e.target.closest && e.target.closest("#sound")) return;   /* кнопку звука обрабатывает её клик */
     start();
     ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { removeEventListener(ev, firstTouch, true); });
   }
   b.addEventListener("click", function (e) {
     e.stopPropagation();
-    if (on && a.paused) { start(); return; }        /* браузер ещё не дал играть — этот клик и включает */
+    if (on && a.paused) { start(); return; }        /* браузер ещё не дал играть — этот клик и включает, а не выключает */
     on = !on;
     try { localStorage.setItem("chernysh_music", on ? "on" : "off"); } catch (e2) {}
     show();
