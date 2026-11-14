@@ -124,13 +124,13 @@ jobs:
           ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
           printf '%s' "$P8" > "$RUNNER_TEMP/AuthKey.p8"
-          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$KEY_ID" --issuer "$ISSUER"             --output-format json > submit.json
+          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$KEY_ID" --issuer "$ISSUER" --output-format json > submit.json
           cat submit.json
           SUB_ID="$(python3 -c "import json;print(json.load(open('submit.json'))['id'])")"
           echo "SUB_ID=$SUB_ID" >> "$GITHUB_ENV"
-          mkdir -p keep && cp "$DMG" keep/ && printf '%s
-%s
-' "$SUB_ID" "$DMG" > keep/submission.txt
+          mkdir -p keep && cp "$DMG" keep/
+          echo "$SUB_ID" > keep/submission.txt
+          echo "$DMG" >> keep/submission.txt
 
       # подписанный .dmg и номер отправки сохраняются в любом случае: если Apple думает дольше,
       # результат заберёт процесс «Проверка нотаризации Mac» (mac-staple.yml), без повторной отправки
